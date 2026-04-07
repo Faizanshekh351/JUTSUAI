@@ -62,10 +62,10 @@ const ConsoleLogs = ({ detectionData, handsActive, prediction, modelStatus }) =>
   const handCount = detectionData?.hands?.length ?? 0
 
   return (
-    <div className='flex gap-3 px-10 pb-8 z-10'>
+    <div className='flex flex-col md:flex-row gap-3 px-4 md:px-10 pb-8 z-10 w-full'>
 
       {/* Detection log panel */}
-      <div className='flex-1 bg-black/40 backdrop-blur-md border border-white/8 rounded-xl p-4 font-mono text-xs overflow-hidden'>
+      <div className='flex-1 w-full md:w-auto bg-black/40 backdrop-blur-md border border-white/8 rounded-xl p-4 font-mono text-xs overflow-hidden'>
         <div className='flex items-center justify-between mb-3'>
           <span className='text-white/30 uppercase tracking-widest text-[10px] font-outfit'>Detection Console</span>
           <div className='flex gap-1.5'>
@@ -92,9 +92,9 @@ const ConsoleLogs = ({ detectionData, handsActive, prediction, modelStatus }) =>
       </div>
 
       {/* Jutsu sign grid — active sign glows gold */}
-      <div className='bg-black/40 backdrop-blur-md border border-white/8 rounded-xl p-4 w-72'>
+      <div className='bg-black/40 backdrop-blur-md border border-white/8 rounded-xl p-4 w-full md:w-72'>
         <div className='text-white/30 uppercase tracking-widest text-[10px] font-outfit mb-3'>Known Jutsu Signs</div>
-        <div className='grid grid-cols-5 gap-1.5'>
+        <div className='grid grid-cols-4 sm:grid-cols-5 gap-1.5'>
           {JUTSU_SIGNS.map((sign) => {
             const isActive = prediction?.sign === sign
             return (
@@ -118,7 +118,7 @@ const ConsoleLogs = ({ detectionData, handsActive, prediction, modelStatus }) =>
       </div>
 
       {/* Stats panel — now includes prediction readout */}
-      <div className='bg-black/40 backdrop-blur-md border border-white/8 rounded-xl p-4 w-44 flex flex-col gap-3'>
+      <div className='bg-black/40 backdrop-blur-md border border-white/8 rounded-xl p-4 w-full md:w-44 flex flex-col gap-3'>
         <div className='text-white/30 uppercase tracking-widest text-[10px] font-outfit'>Session Stats</div>
         {[
           { label: 'Hands Detected', val: `${handCount}/2` },

@@ -40,7 +40,7 @@ const Projects = () => {
 
   return (
     <div
-      className='h-screen w-full overflow-hidden flex flex-col font-outfit'
+      className='min-h-screen w-full overflow-y-auto overflow-x-hidden flex flex-col font-outfit pb-24 md:pb-0'
       style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(0,180,255,0.06) 0%, #000 60%)' }}
     >
       {/* Subtle grid overlay */}

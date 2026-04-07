@@ -69,14 +69,27 @@ export const useLoadedModel = () => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching model.json`)
         const rawJSON = await resp.json()
 
-        // 2. Patch Keras 3 incompatibilities
+        // 2. Auto-Detect: Is this a Python Keras Model or a Native Browser Model?
+        if (rawJSON.generatedBy && rawJSON.generatedBy.includes('tfjs-layers')) {
+          // Native Web Model: No patches needed, load instantly!
+          const model = await tf.loadLayersModel('/model/model.json')
+          if (!cancelled) {
+            modelRef.current = model
+            setModelStatus('ready')
+            console.log('> [useLoadedModel] Native Web Model loaded ✓')
+          }
+          return
+        }
+
+        // 3. Patch Keras 3 incompatibilities
         const patchedJSON = patchModelJSON(rawJSON)
 
-        // 3. Build a custom IOHandler so TF.js still fetches the .bin from /model/
+        // 4. Build a custom IOHandler so TF.js still fetches the .bin from /model/
         const ioHandler = {
           load: async () => {
-            // Fetch the binary weights shard
-            const weightsResp = await fetch('/model/group1-shard1of1.bin')
+            // Dynamically read the binary filename from the model.json manifest
+            const weightFileName = patchedJSON.weightsManifest[0].paths[0]
+            const weightsResp = await fetch(`/model/${weightFileName}`)
             if (!weightsResp.ok) throw new Error(`HTTP ${weightsResp.status} fetching weights`)
             const weightsBuffer = await weightsResp.arrayBuffer()
 
@@ -97,7 +110,7 @@ export const useLoadedModel = () => {
         if (!cancelled) {
           modelRef.current = model
           setModelStatus('ready')
-          console.log('> [useLoadedModel] Model loaded ✓')
+          console.log('> [useLoadedModel] Python Keras Model loaded ✓')
         }
       } catch (err) {
         if (!cancelled) {
@@ -116,13 +129,13 @@ export const useLoadedModel = () => {
    * @returns {{ sign: string, confidence: number, raw: number } | null}
    */
   // ── Predict ───────────────────────────────────────────────────────────────
-  const predict = useCallback((multiHandLandmarks, multiHandedness) => {
+  const predict = useCallback((multiHandLandmarks) => {
     if (modelStatus !== 'ready' || !modelRef.current || !multiHandLandmarks) {
       return null
     }
 
     // Build the 126-float feature vector (same normalisation as training)
-    const features = extractAndNormalizeData(multiHandLandmarks, multiHandedness)
+    const features = extractAndNormalizeData(multiHandLandmarks)
     if (features.length === 0) return null
 
     let scores

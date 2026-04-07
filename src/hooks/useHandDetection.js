@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
-import { Holistic, HAND_CONNECTIONS, POSE_CONNECTIONS } from '@mediapipe/holistic'
+import { Hands, HAND_CONNECTIONS } from '@mediapipe/hands'
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils'
-import { extractAndNormalizeData, downloadJSON } from '../utils/handData'
+import { extractAndNormalizeData } from '../utils/handData'
 
 const MAX_GHOST_FRAMES = 60
 const SMOOTHING_FACTOR = 0.7  // higher = more responsive to fast movement
@@ -67,11 +67,10 @@ function getBoundingBox(landmarks, canvasWidth, canvasHeight) {
 }
 
 // ─── 3. DRAWING ───────────────────────────────────────────────────────────────
-function drawSkeleton(ctx, canvas, multiHandLandmarks, multiHandedness, prediction, poseLandmarks) {
+function drawSkeleton(ctx, canvas, multiHandLandmarks, prediction) {
   multiHandLandmarks.forEach((landmarks, i) => {
-    const handLabel    = multiHandedness?.[i]?.label ?? 'Right'
     const isDetected   = prediction && prediction.sign !== '?'
-    const lineColor    = isDetected ? '#facc15' : (handLabel === 'Left' ? '#00e5ff' : '#76ff03')
+    const lineColor    = isDetected ? '#facc15' : '#00e5ff'
 
     // Skeleton + joints
     drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: lineColor, lineWidth: 3 })
@@ -116,7 +115,7 @@ function drawSkeleton(ctx, canvas, multiHandLandmarks, multiHandedness, predicti
         ? `[ ${prediction.sign.toUpperCase()}  ${pct}% ]`
         : `[ SCANNING… ${pct}% ]`
     } else {
-      labelText = `[ ${handLabel.toUpperCase()} HAND ]`
+      labelText = `[ DETECTED HAND ]`
     }
 
     ctx.font = 'bold 12px monospace'
@@ -181,19 +180,8 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // ── SYNTHESIZE MULTI-HAND DATA FROM HOLISTIC RESULTS ────────────────────
-    const multiHandLandmarks = []
-    const multiHandedness = []
-
-    if (results.leftHandLandmarks) {
-      multiHandLandmarks.push(results.leftHandLandmarks)
-      multiHandedness.push({ label: 'Right' }) // Camera is mirrored, left sensor = right hand
-    }
-    if (results.rightHandLandmarks) {
-      multiHandLandmarks.push(results.rightHandLandmarks)
-      multiHandedness.push({ label: 'Left' })
-    }
-
+    // ── NATIVE HANDS RESULTS ──────────────────────────────────────────────────
+    const multiHandLandmarks = results.multiHandLandmarks || []
     const numHands = multiHandLandmarks.length
 
     // ── SCENARIO A: Hands visible ────────────────────────────────────────────
@@ -208,21 +196,20 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
       })
 
       // Run AI inference only if we are NOT recording (Frees 100% CPU for capture)
-      const prediction = (getPrediction && !window._isRecordingFast) ? getPrediction(smoothed, multiHandedness) : null
+      const prediction = (getPrediction && !window._isRecordingFast) ? getPrediction(smoothed) : null
 
-      drawSkeleton(ctx, canvas, smoothed, multiHandedness, prediction, results.poseLandmarks)
+      drawSkeleton(ctx, canvas, smoothed, prediction)
 
       const dominant = getDominantHand(smoothed)
 
       // ── DATA INTERCEPTOR (Zero Lag Fast Capture) ─────────────────────────────
       if (window._isRecordingFast) {
-        const flatData = extractAndNormalizeData(smoothed, multiHandedness)
+        const flatData = extractAndNormalizeData(smoothed)
         window._fastCaptureDataset.push({ label: window._recordingLabel, features: flatData })
       }
 
       onResults?.({
         hands:      smoothed,
-        handedness: multiHandedness,
         dominant:   dominant?.hand ?? null,
         locked:     true,
         ghost:      false,
@@ -242,17 +229,17 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
         missingFrames.current = 0
         prevLandmarks.current = [null, null]  // clear smoothing buffers
         console.log('> TARGET LOST')
-        onResults?.({ hands: [], handedness: [], dominant: null, locked: false, ghost: false })
+        onResults?.({ hands: [], dominant: null, locked: false, ghost: false })
       } else {
         console.log(`> HOLDING LOCK... (Ghost Frame ${missingFrames.current}/${MAX_GHOST_FRAMES})`)
         drawGhostRing(ctx, canvas, missingFrames.current)
-        onResults?.({ hands: [], handedness: [], dominant: null, locked: true, ghost: true })
+        onResults?.({ hands: [], dominant: null, locked: true, ghost: true })
       }
 
     // ── SCENARIO C: Idle ─────────────────────────────────────────────────────
     } else {
       prevLandmarks.current = [null, null]
-      onResults?.({ hands: [], handedness: [], dominant: null, locked: false, ghost: false })
+      onResults?.({ hands: [], dominant: null, locked: false, ghost: false })
     }
   }, [canvasRef, videoRef, onResults])
 
@@ -268,19 +255,19 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
     const video = videoRef?.current
     if (!video) return
 
-    const holistic = new Holistic({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5/${file}`,
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     })
 
-    holistic.setOptions({
-      modelComplexity:        1,   // Gives better spatial depth than simple hands
-      smoothLandmarks:        true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence:  0.5,
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.3, // Lower confidence allows it to grab highly-tangled hands!
+      minTrackingConfidence: 0.3,
     })
 
-    holistic.onResults(handleResults)
-    handsRef.current  = holistic
+    hands.onResults(handleResults)
+    handsRef.current  = hands
     runningRef.current = true
     let isProcessing = false  // GATE: prevents frame queue buildup
 
@@ -290,7 +277,7 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
       if (v && v.readyState >= 2 && !v.paused && v.videoWidth > 0 && !isProcessing) {
         isProcessing = true
         try {
-          await holistic.send({ image: v })
+          await hands.send({ image: v })
         } catch (_) {
           // model still loading
         } finally {
@@ -305,7 +292,7 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
     return () => {
       runningRef.current = false
       cancelAnimationFrame(rafRef.current)
-      holistic.close()
+      hands.close()
       handsRef.current = null
       prevLandmarks.current = [null, null]
     }

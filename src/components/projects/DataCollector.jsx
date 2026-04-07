@@ -117,51 +117,97 @@ const DataCollector = ({ videoRef }) => {
     setIsTraining(true)
     setStatusMsg('>> COMPILING MULTICLASS NEURAL NETWORK...')
     
+    // Give React 100ms to paint the UI before TensorFlow locks the main thread
+    await new Promise(r => setTimeout(r, 100))
+    
     // Multi-Class Classifier: Supports unlimited Jutsu detection in a single file
     const model = tf.sequential()
     model.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [126] }))
     model.add(tf.layers.dense({ units: 32, activation: 'relu' }))
     model.add(tf.layers.dense({ units: JUTSU_SIGNS.length, activation: 'softmax' })) // Multi-Class output
 
-    model.compile({ optimizer: 'adam', loss: 'sparseCategoricalCrossentropy', metrics: ['accuracy'] })
+    model.compile({ optimizer: 'adam', loss: 'sparseCategoricalCrossentropy' })
 
-    // Map dataset labels to their array indicies (0 to N-1)
-    const xsData = ds.map(d => d.features)
-    const ysData = ds.map(d => JUTSU_SIGNS.indexOf(d.label))
+    // ── DATA SCRUBBER: Filter out corrupt MediaPipe NaN frames and invalid labels
+    const cleanX = []
+    const cleanY = []
 
-    const xs = tf.tensor2d(xsData)
-    const ys = tf.tensor1d(ysData, 'int32')
-
-    setStatusMsg('>> TRAINING BRAIN (50 EPOCHS)...')
-
-    await model.fit(xs, ys, {
-      epochs: 50,
-      batchSize: 32,
-      shuffle: true,
-      callbacks: {
-        onEpochEnd: (epoch, logs) => {
-          setTrainingProgress(((epoch + 1) / 50) * 100)
-          setStatusMsg(`Epoch ${epoch + 1}/50 — Loss: ${logs.loss.toFixed(4)}`)
-        }
+    for (let i = 0; i < ds.length; i++) {
+      const features = ds[i].features
+      const labelIdx = JUTSU_SIGNS.indexOf(ds[i].label)
+      
+      // Strict mathematically-safe gate
+      if (features.length === 126 && !features.some(isNaN) && labelIdx !== -1) {
+        cleanX.push(features)
+        cleanY.push(labelIdx)
       }
-    })
-
-    xs.dispose()
-    ys.dispose()
-
-    setStatusMsg('>> TRAINING COMPLETE! Downlaoding weights...')
-    
-    // Auto-download files
-    try {
-      await model.save('downloads://model')
-      setStatusMsg('✓ Downloaded! Place both files in public/model/.')
-    } catch (err) {
-      console.error(err)
-      setStatusMsg('⚠ Failed to save model. Check console.')
     }
 
-    setIsTraining(false)
-    setTrainingProgress(0)
+    const uniqueClasses = new Set(cleanY)
+    if (uniqueClasses.size < 2) {
+      setStatusMsg('⚠ Cannot train! You need both Target Data AND Idle Data.')
+      setIsTraining(false)
+      return
+    }
+
+    const xs = tf.tensor2d(cleanX)
+    const ys = tf.tensor1d(cleanY)
+
+    setStatusMsg('>> TRAINING BRAIN (40 EPOCHS)...')
+
+    try {
+      await model.fit(xs, ys, {
+        epochs: 40,
+        batchSize: 32,
+        shuffle: true,
+        yieldEvery: 'epoch',
+        callbacks: {
+          onEpochEnd: async (epoch, logs) => {
+            setTrainingProgress(((epoch + 1) / 40) * 100)
+            setStatusMsg(`Epoch ${epoch + 1}/40 — Loss: ${logs.loss.toFixed(4)}`)
+            await tf.nextFrame()
+          }
+        }
+      })
+
+      setStatusMsg('>> TRAINING COMPLETE! Zipping Brain...')
+      
+      // Bypass Chrome's multi-file download blocker by packing the Brain into a single ZIP
+      await model.save(tf.io.withSaveHandler(async (artifacts) => {
+        const zip = new JSZip()
+        zip.file("model.json", JSON.stringify({
+          format: artifacts.format,
+          generatedBy: artifacts.generatedBy,
+          convertedBy: artifacts.convertedBy,
+          modelTopology: artifacts.modelTopology,
+          weightsManifest: [{
+            paths: ["model.weights.bin"],
+            weights: artifacts.weightSpecs
+          }]
+        }))
+        zip.file("model.weights.bin", artifacts.weightData)
+        
+        const content = await zip.generateAsync({ type: 'blob' })
+        const url = URL.createObjectURL(content)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `jutsu_brain.zip`
+        a.click()
+        URL.revokeObjectURL(url)
+        
+        return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' } }
+      }))
+      
+      setStatusMsg('✓ Downloaded jutsu_brain.zip! Extract it into public/model/.')
+    } catch (err) {
+      console.error("FATAL TRAINING ERROR:", err)
+      setStatusMsg(`⚠ Training Failed: ${err.message.slice(0, 40)}... Check Console.`)
+    } finally {
+      xs.dispose()
+      ys.dispose()
+      setIsTraining(false)
+      setTrainingProgress(0)
+    }
   }
 
   const handleClear = () => {

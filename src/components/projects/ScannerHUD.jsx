@@ -25,8 +25,8 @@ const ScannerHUD = ({ onStreamReady, videoRef: externalVideoRef, canvasRef: exte
   })
 
   return (
-    <div className='relative flex-1 flex items-center justify-center px-10 pb-4'>
-      <div className='relative w-full max-w-3xl aspect-video bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(0,200,255,0.08),inset_0_0_80px_rgba(0,0,0,0.6)]'>
+    <div className='relative flex-1 flex items-center justify-center px-4 md:px-10 pb-4 mt-6 md:mt-0'>
+      <div className='relative w-full max-w-5xl aspect-video bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(0,200,255,0.08),inset_0_0_80px_rgba(0,0,0,0.6)]'>
 
         {/* Live webcam feed */}
         <video

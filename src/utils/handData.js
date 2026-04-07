@@ -8,19 +8,23 @@
  * making the data position-invariant and scale-invariant.
  * The AI will recognize signs regardless of where you stand in frame.
  */
-export function extractAndNormalizeData(multiHandLandmarks, multiHandedness) {
+export function extractAndNormalizeData(multiHandLandmarks) {
   const flatData = new Array(126).fill(0)
 
-  if (!multiHandLandmarks) return flatData
+  if (!multiHandLandmarks || multiHandLandmarks.length === 0) return flatData
 
-  for (let i = 0; i < Math.min(multiHandLandmarks.length, 2); i++) {
-    const hand  = multiHandLandmarks[i]
+  // 1. Sort hands by Z-Axis Depth.
+  // The wrist (landmark 0) with the lowest Z is closest to the camera.
+  // This physically locks the array so tangled hands never rapidly swap slots 0-62 and 63-125!
+  let sortedHands = [...multiHandLandmarks].sort((a, b) => a[0].z - b[0].z)
+
+  for (let i = 0; i < Math.min(sortedHands.length, 2); i++) {
+    const hand = sortedHands[i]
     if (!hand) continue
     const wrist = hand[0]
     
-    // Explicitly enforce the 126 Rule: Left Hand = Slot 0, Right Hand = Slot 1
-    const handLabel = multiHandedness?.[i]?.label ?? (i === 0 ? 'Left' : 'Right')
-    const offset = handLabel === 'Left' ? 0 : 63
+    // Front hand always fills slot 0. Back hand always fills slot 1.
+    const offset = i * 63
 
     hand.forEach((joint, index) => {
       flatData[offset + index * 3]     = joint.x - wrist.x

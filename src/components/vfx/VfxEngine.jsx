@@ -102,59 +102,75 @@ const getBoundingCenter = (landmarks) => {
  * Listens to the prediction stream. When confidence is >= 98%,
  * it spawns a visual effect exactly over the hands.
  */
-const VfxEngine = ({ prediction, latestHands, videoRef }) => {
+const VfxEngine = ({ prediction, latestHands, canvasRef, videoRef }) => {
   const [effects, setEffects] = useState([])
   const lastSpawnRef = useRef(0)
 
   const spawnEffect = useCallback((x, y, label) => {
     let cloneImgSrc = null;
 
-    // --- NEW: Take a physical snapshot of the user's webcam! ---
-    if (videoRef?.current && label === 'SHADOW CLONE') {
+    if (label === 'SHADOW CLONE') {
       try {
-        const snapCanvas = document.createElement('canvas')
-        snapCanvas.width = videoRef.current.videoWidth || 640
-        snapCanvas.height = videoRef.current.videoHeight || 480
-        const snapCtx = snapCanvas.getContext('2d')
-        // Ensure aspect ratio fits nicely inside our snapshot square
-        snapCtx.drawImage(videoRef.current, 0, 0, snapCanvas.width, snapCanvas.height)
-        cloneImgSrc = snapCanvas.toDataURL('image/webp', 0.8)
+        // --- WE MUST USE VIDEO REF --- 
+        // The canvasRef only contains transparent green skeleton lines!
+        if (videoRef && videoRef.current) {
+          const snapCanvas = document.createElement('canvas');
+          snapCanvas.width = videoRef.current.videoWidth || 1280;
+          snapCanvas.height = videoRef.current.videoHeight || 720;
+          const snapCtx = snapCanvas.getContext('2d');
+          
+          // Draw the UHD live user video
+          snapCtx.drawImage(videoRef.current, 0, 0, snapCanvas.width, snapCanvas.height);
+          cloneImgSrc = snapCanvas.toDataURL('image/png', 1.0);
+          console.log("📸 SUCCESS: UHD Video Snapshot Captured!");
+        } 
+        else {
+          console.warn("⚠️ ERROR: Video Ref is missing! Cannot capture UHD Cam.");
+        }
       } catch (e) {
-        console.error("Failed to capture shadow clone snapshot", e)
+        console.error("❌ Snapshot completely failed:", e);
       }
     }
 
-    const id = Date.now() + Math.random()
-    setEffects(prev => [...prev, { id, x, y, label, cloneImgSrc }])
+    const id = Date.now() + Math.random();
+    setEffects(prev => [...prev, { id, x, y, label, cloneImgSrc }]);
     
-    // Auto-cleanup the effect after it finishes (1.5 seconds)
     setTimeout(() => {
-      setEffects(prev => prev.filter(fx => fx.id !== id))
-    }, 1500)
-  }, [videoRef])
+      setEffects(prev => prev.filter(fx => fx.id !== id));
+    }, 1500);
+  }, [canvasRef, videoRef]); // 👈 Don't forget to add them to dependencies!
 
   useEffect(() => {
-    // We only want to trigger the clone effect if it's highly confident
-    // AND if we have hand data to know where to spawn it.
-    if (prediction && prediction.sign === 'Shadow Clone') {
+    if (prediction?.sign === 'Shadow Clone') {
        console.log(`[VfxEngine] Shadow Clone detected at ${Math.round(prediction.confidence * 100)}% confidence`);
     }
 
-    if (prediction && prediction.sign === 'Shadow Clone' && prediction.confidence >= 0.70 && latestHands && latestHands.length > 0) {
-      
-      const now = Date.now()
-      // Cooldown of 1.5 seconds between "Poofs" to prevent spamming
-      if (now - lastSpawnRef.current > 1500) {
-        lastSpawnRef.current = now
-        
-        // Calculate the center of the dominant hand (or the first hand in the array)
-        const center = getBoundingCenter(latestHands[0])
-        
-        // Convert normalized [0, 1] coordinates to percentages for CSS
-        spawnEffect(center.x * 100, center.y * 100, 'SHADOW CLONE')
-      }
+    // 1. Bail out early if there is no confident prediction
+    if (!prediction || prediction.sign !== 'Shadow Clone' || prediction.confidence < 0.30) {
+      return;
     }
-  }, [prediction, latestHands, spawnEffect])
+
+    // 2. Check if we actually have hands to attach the clone to
+    if (!latestHands || latestHands.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    // 3. The Cooldown Check (Prevents spamming and infinite loops)
+    if (now - lastSpawnRef.current > 1500) {
+      lastSpawnRef.current = now;
+      
+      // Calculate center
+      const center = getBoundingCenter(latestHands[0]);
+      
+      // Spawn it!
+      spawnEffect(center.x * 100, center.y * 100, 'SHADOW CLONE');
+    }
+    
+    // THE FIX: We ONLY watch prediction.sign and prediction.confidence. 
+    // We DO NOT watch the whole `prediction` object or the `latestHands` array, 
+    // because their memory addresses change 30 times a second!
+  }, [prediction?.sign, prediction?.confidence, spawnEffect]);
 
   // Don't render the wrapper at all if there are no effects
   if (effects.length === 0) return null
@@ -162,7 +178,7 @@ const VfxEngine = ({ prediction, latestHands, videoRef }) => {
   return (
     <>
       <style>{fxStyles}</style>
-      <div className="absolute inset-0 z-50 pointer-events-none overflow-hidden rounded-2xl">
+      <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden rounded-2xl">
         {effects.map(fx => (
           <div key={fx.id} style={{ position: 'absolute', top: `${fx.y}%`, left: `${fx.x}%` }}>
             <div className="fx-smoke-layer" />
@@ -172,8 +188,18 @@ const VfxEngine = ({ prediction, latestHands, videoRef }) => {
             {/* Render True Shadow Clones (Video Snapshots) */}
             {fx.cloneImgSrc && (
               <>
-                <img src={fx.cloneImgSrc} className="fx-clone-snapshot-left" alt="Clone Left" />
-                <img src={fx.cloneImgSrc} className="fx-clone-snapshot-right" alt="Clone Right" />
+                <img 
+                  src={fx.cloneImgSrc} 
+                  className="fx-clone-snapshot-left" 
+                  alt="Clone Left" 
+                  style={{ zIndex: 9999 }} // Force it to the front
+                />
+                <img 
+                  src={fx.cloneImgSrc} 
+                  className="fx-clone-snapshot-right" 
+                  alt="Clone Right" 
+                  style={{ zIndex: 9999 }} // Force it to the front
+                />
               </>
             )}
 

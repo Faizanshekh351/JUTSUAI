@@ -26,8 +26,18 @@ const Projects = () => {
   const handleResults = useCallback((data) => {
     setDetectionData(data)
     setLatestHands(data.hands?.length > 0 ? data.hands : null)
-    if (data.prediction) setPrediction(data.prediction)
-    else if (!data.locked) setPrediction(null)
+    
+    // Fix 3: Guard state updates
+    if (data.prediction) {
+      setPrediction(prev => {
+        if (prev?.sign === data.prediction.sign && prev?.confidence === data.prediction.confidence) {
+          return prev;
+        }
+        return data.prediction;
+      });
+    } else if (!data.locked) {
+      setPrediction(prev => prev === null ? null : null);
+    }
   }, [])
 
   const { handsRef } = useHandDetection({

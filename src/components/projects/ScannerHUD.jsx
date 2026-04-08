@@ -114,7 +114,7 @@ const ScannerHUD = ({ onStreamReady, videoRef: externalVideoRef, canvasRef: exte
         {camStatus === 'ACTIVE' && <ScanLine scanY={scanY} />}
 
         {/* Shadow Clone Smoke FX */}
-        <VfxEngine prediction={prediction} latestHands={latestHands} videoRef={videoRef} />
+        <VfxEngine prediction={prediction} latestHands={latestHands} canvasRef={canvasRef} videoRef={videoRef} />
 
         <Corner position='tl' />
         <Corner position='tr' />

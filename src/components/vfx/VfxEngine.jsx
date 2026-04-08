@@ -1,210 +1,222 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
-// Centralized styles for the Smoke VFX to avoid cluttering global CSS files
+// ─── Smoke Sprite: 5 frames × 120ms (Nasha's exact timing) ───────────────────
+const SMOKE_FOLDERS = ['smoke_1', 'smoke_2', 'smoke_3']
+
+const SmokeSprite = ({ leftPct, delay, scale = 1 }) => {
+  const [frame, setFrame] = useState(0)
+  const [visible, setVisible] = useState(false)
+  const folder = useRef(SMOKE_FOLDERS[Math.floor(Math.random() * 3)])
+  const size = Math.round(100 * scale)
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setVisible(true)
+      let f = 0
+      const id = setInterval(() => {
+        f++
+        if (f >= 5) { clearInterval(id); setVisible(false); return }
+        setFrame(f)
+      }, 120)
+      return () => clearInterval(id)
+    }, delay)
+    return () => clearTimeout(t)
+  }, [delay])
+
+  if (!visible) return null
+
+  // Nasha spawns two smoke bursts at x±15 from clone center
+  const cx = `${leftPct + 17}%`   // center of the clone column
+  return (
+    <>
+      <img src={`/${folder.current}/${frame + 1}.png`} alt=""
+        style={{ position:'absolute', left:`calc(${cx} - ${size/2 + 18}px)`, bottom:'8%', width:size, height:size, pointerEvents:'none', zIndex:55 }} />
+      <img src={`/${folder.current}/${frame + 1}.png`} alt=""
+        style={{ position:'absolute', left:`calc(${cx} + ${18 - size/2}px)`, bottom:'8%', width:size, height:size, pointerEvents:'none', zIndex:55 }} />
+    </>
+  )
+}
+
+// ─── Single clone: narrow column cropped to person area ───────────────────────
+const CloneImage = ({ src, leftPct, delay, opacity, zIdx, handX }) => {
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setOn(true), delay)
+    return () => clearTimeout(t)
+  }, [delay])
+
+  return (
+    <img
+      src={src}
+      alt=""
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: `${leftPct}%`,
+        width: '34%',
+        height: '100%',
+        objectFit: 'cover',
+        // Sync crop to where user actually sits in the frame (hand position = rough body center)
+        objectPosition: `${handX ?? 50}% top`,
+        opacity: on ? opacity : 0,
+        transition: 'opacity 0.2s ease-in',
+        pointerEvents: 'none',
+        zIndex: zIdx,
+        // 28% inner fade — clone is already transparent well before it reaches center user zone
+        WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 28%, black 72%, transparent 100%)',
+        maskImage: 'linear-gradient(to right, transparent 0%, black 28%, black 72%, transparent 100%)',
+        filter: 'brightness(0.82) contrast(1.08)',
+      }}
+    />
+  )
+}
+
+// ─── CSS for text popup ───────────────────────────────────────────────────────
 const fxStyles = `
-  @keyframes smokeExpand {
-    0%   { transform: translate(-50%, -50%) scale(0.1); opacity: 0.9; }
-    30%  { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
-    100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
-  }
-  @keyframes flashPop {
-    0%   { transform: translate(-50%, -50%) scale(0); opacity: 1; filter: brightness(2); }
-    10%  { transform: translate(-50%, -50%) scale(1.1); opacity: 1; filter: brightness(1.5); }
-    100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; filter: brightness(1); }
-  }
   @keyframes floatUp {
-    0%   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-    100% { transform: translate(-50%, -150%) scale(1.5); opacity: 0; }
+    0%   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+    100% { transform: translate(-50%, -220%) scale(1.4); opacity: 0; }
   }
-  .fx-smoke-layer {
-    position: absolute;
-    width: 250px;
-    height: 250px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(200,200,200,0.8) 10%, rgba(100,100,100,0.4) 40%, transparent 70%);
-    animation: smokeExpand 1s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-    pointer-events: none;
-    mix-blend-mode: screen;
-  }
-  .fx-flash-layer {
-    position: absolute;
-    width: 200px;
-    height: 200px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(0, 255, 200, 0.6) 20%, transparent 60%);
-    animation: flashPop 0.5s ease-out forwards;
-    pointer-events: none;
-    mix-blend-mode: color-dodge;
+  @keyframes screenShake {
+    0%   { transform: translate(0, 0) rotate(0deg); }
+    10%  { transform: translate(-8px, -8px) rotate(-1deg); }
+    20%  { transform: translate(8px, -4px) rotate(1deg); }
+    30%  { transform: translate(-8px, 4px) rotate(0deg); }
+    40%  { transform: translate(8px, 8px) rotate(1deg); }
+    50%  { transform: translate(-4px, -8px) rotate(-1deg); }
+    60%  { transform: translate(4px, 4px) rotate(0deg); }
+    70%  { transform: translate(-2px, -2px) rotate(1deg); }
+    80%  { transform: translate(2px, 2px) rotate(-1deg); }
+    90%  { transform: translate(-1px, -1px) rotate(0deg); }
+    100% { transform: translate(0, 0) rotate(0deg); }
   }
   .fx-text {
     position: absolute;
     color: #fff;
     font-family: 'Syne', sans-serif;
     font-weight: 800;
-    font-size: 24px;
+    font-size: 20px;
     letter-spacing: 4px;
-    text-shadow: 0 0 10px rgba(0, 255, 200, 0.8), 0 0 20px rgba(0, 255, 200, 0.4);
-    animation: floatUp 1.2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+    text-shadow: 0 0 8px rgba(255,255,255,1), 0 0 22px rgba(0,200,255,0.8);
+    animation: floatUp 1.4s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
     pointer-events: none;
-  }
-  @keyframes cloneSlideLeft {
-    0%   { transform: translate(-30%, -50%) scale(0.9); opacity: 0; filter: brightness(2) drop-shadow(0 0 20px cyan); }
-    15%  { transform: translate(-80%, -50%) scale(1); opacity: 0.9; filter: brightness(1.2) drop-shadow(0 0 30px cyan); }
-    80%  { transform: translate(-80%, -50%) scale(1); opacity: 0.9; filter: brightness(1); }
-    100% { transform: translate(-85%, -55%) scale(1.05); opacity: 0; filter: blur(4px) brightness(0.5); }
-  }
-  @keyframes cloneSlideRight {
-    0%   { transform: translate(-70%, -50%) scale(0.9); opacity: 0; filter: brightness(2) drop-shadow(0 0 20px cyan); }
-    15%  { transform: translate(-20%, -50%) scale(1); opacity: 0.9; filter: brightness(1.2) drop-shadow(0 0 30px cyan); }
-    80%  { transform: translate(-20%, -50%) scale(1); opacity: 0.9; filter: brightness(1); }
-    100% { transform: translate(-15%, -55%) scale(1.05); opacity: 0; filter: blur(4px) brightness(0.5); }
-  }
-  .fx-clone-snapshot-left {
-    position: absolute;
-    width: 320px;
-    height: 320px;
-    object-fit: cover;
-    border-radius: 20px;
-    animation: cloneSlideLeft 1.5s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-    pointer-events: none;
-    z-index: 10;
-    opacity: 0.8;
-  }
-  .fx-clone-snapshot-right {
-    position: absolute;
-    width: 320px;
-    height: 320px;
-    object-fit: cover;
-    border-radius: 20px;
-    animation: cloneSlideRight 1.5s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-    pointer-events: none;
-    z-index: 10;
-    opacity: 0.8;
+    white-space: nowrap;
+    z-index: 70;
   }
 `
 
-const getBoundingCenter = (landmarks) => {
-  let minX = 1, minY = 1, maxX = 0, maxY = 0
-  for (const lm of landmarks) {
-    if (lm.x < minX) minX = lm.x
-    if (lm.y < minY) minY = lm.y
-    if (lm.x > maxX) maxX = lm.x
-    if (lm.y > maxY) maxY = lm.y
-  }
-  return {
-    x: (minX + maxX) / 2,
-    y: (minY + maxY) / 2,
-  }
-}
+// ─── Clone config ─────────────────────────────────────────────────────────────
+// Center zone 42–58% is kept 100% clear for the live user.
+// Left clones:  right edge ≤ 42% (leftPct + 34 ≤ 42 → leftPct ≤ 8)
+// Right clones: left edge  ≥ 58% (leftPct ≥ 58)
+const CLONE_CONFIG = [
+  // ── Left (cascade left from center) ────────────────────
+  { leftPct:  8, delay: 1000, opacity: 0.88, zIdx: 14 }, // right edge 42% → clear of user
+  { leftPct: -4, delay: 1300, opacity: 0.88, zIdx: 13 },
+  { leftPct:-16, delay: 1600, opacity: 0.88, zIdx: 12 },
+  { leftPct:-28, delay: 1900, opacity: 0.88, zIdx: 11 },
+  // ── Right (mirror) ────────────────────────────────
+  { leftPct: 58, delay: 1050, opacity: 0.88, zIdx: 14 }, // left edge 58% → clear of user
+  { leftPct: 70, delay: 1350, opacity: 0.88, zIdx: 13 },
+  { leftPct: 82, delay: 1650, opacity: 0.88, zIdx: 12 },
+  { leftPct: 94, delay: 1950, opacity: 0.88, zIdx: 11 },
+]
 
-/**
- * VfxEngine
- * Listens to the prediction stream. When confidence is >= 98%,
- * it spawns a visual effect exactly over the hands.
- */
-const VfxEngine = ({ prediction, latestHands, canvasRef, videoRef }) => {
+// ─── Main VfxEngine ───────────────────────────────────────────────────────────
+const VfxEngine = ({ prediction, latestHands, videoRef }) => {
   const [effects, setEffects] = useState([])
   const lastSpawnRef = useRef(0)
 
-  const spawnEffect = useCallback((x, y, label) => {
-    let cloneImgSrc = null;
-
-    if (label === 'SHADOW CLONE') {
-      try {
-        // --- WE MUST USE VIDEO REF --- 
-        // The canvasRef only contains transparent green skeleton lines!
-        if (videoRef && videoRef.current) {
-          const snapCanvas = document.createElement('canvas');
-          snapCanvas.width = videoRef.current.videoWidth || 1280;
-          snapCanvas.height = videoRef.current.videoHeight || 720;
-          const snapCtx = snapCanvas.getContext('2d');
-          
-          // Draw the UHD live user video
-          snapCtx.drawImage(videoRef.current, 0, 0, snapCanvas.width, snapCanvas.height);
-          cloneImgSrc = snapCanvas.toDataURL('image/png', 1.0);
-          console.log("📸 SUCCESS: UHD Video Snapshot Captured!");
-        } 
-        else {
-          console.warn("⚠️ ERROR: Video Ref is missing! Cannot capture UHD Cam.");
-        }
-      } catch (e) {
-        console.error("❌ Snapshot completely failed:", e);
-      }
-    }
-
-    const id = Date.now() + Math.random();
-    setEffects(prev => [...prev, { id, x, y, label, cloneImgSrc }]);
-    
-    setTimeout(() => {
-      setEffects(prev => prev.filter(fx => fx.id !== id));
-    }, 1500);
-  }, [canvasRef, videoRef]); // 👈 Don't forget to add them to dependencies!
-
   useEffect(() => {
-    if (prediction?.sign === 'Shadow Clone') {
-       console.log(`[VfxEngine] Shadow Clone detected at ${Math.round(prediction.confidence * 100)}% confidence`);
-    }
+    if (!prediction || prediction.sign !== 'Shadow Clone' || prediction.confidence < 0.70) return
+    if (!latestHands || latestHands.length === 0) return
 
-    // 1. Bail out early if there is no confident prediction
-    if (!prediction || prediction.sign !== 'Shadow Clone' || prediction.confidence < 0.30) {
-      return;
-    }
+    const now = Date.now()
+    if (now - lastSpawnRef.current > 4500) {
+      lastSpawnRef.current = now
+      const fxId = Date.now()
+      console.log('💥 Shadow Clone!')
 
-    // 2. Check if we actually have hands to attach the clone to
-    if (!latestHands || latestHands.length === 0) {
-      return;
-    }
+      // Trigger the Poof sound!
+      const audio = new Audio('/poof.mp3')
+      audio.volume = 0.8
+      audio.play().catch(e => console.log('Audio requires user to interact with the page first, or missing /poof.mp3 asset.'))
 
-    const now = Date.now();
-    // 3. The Cooldown Check (Prevents spamming and infinite loops)
-    if (now - lastSpawnRef.current > 1500) {
-      lastSpawnRef.current = now;
-      
-      // Calculate center
-      const center = getBoundingCenter(latestHands[0]);
-      
-      // Spawn it!
-      spawnEffect(center.x * 100, center.y * 100, 'SHADOW CLONE');
-    }
-    
-    // THE FIX: We ONLY watch prediction.sign and prediction.confidence. 
-    // We DO NOT watch the whole `prediction` object or the `latestHands` array, 
-    // because their memory addresses change 30 times a second!
-  }, [prediction?.sign, prediction?.confidence, spawnEffect]);
+      let cloneImgSrc = null
+      try {
+        const v = videoRef?.current
+        if (v && v.readyState >= 2 && v.videoWidth > 0) {
+          const snap = document.createElement('canvas')
+          snap.width  = v.videoWidth
+          snap.height = v.videoHeight
+          snap.getContext('2d').drawImage(v, 0, 0)
+          cloneImgSrc = snap.toDataURL('image/jpeg', 0.92)
+          console.log('📸 Clone captured', snap.width, 'x', snap.height)
+        }
+      } catch (e) { console.error(e) }
 
-  // Don't render the wrapper at all if there are no effects
+      // Hand position for text anchor
+      let handX = 50, handY = 45
+      if (latestHands[0]?.length) {
+        const lms = latestHands[0]
+        let minX = 1, maxX = 0, minY = 1, maxY = 0
+        for (const lm of lms) {
+          if (lm.x < minX) minX = lm.x; if (lm.x > maxX) maxX = lm.x
+          if (lm.y < minY) minY = lm.y; if (lm.y > maxY) maxY = lm.y
+        }
+        handX = ((minX + maxX) / 2) * 100
+        handY = ((minY + maxY) / 2) * 100
+      }
+
+      setEffects(prev => [...prev, { id: fxId, handX, handY, cloneImgSrc }])
+      setTimeout(() => setEffects(prev => prev.filter(fx => fx.id !== fxId)), 4500)
+    }
+  }, [prediction?.sign, prediction?.confidence])
+
   if (effects.length === 0) return null
 
   return (
     <>
       <style>{fxStyles}</style>
-      <div className="absolute inset-0 z-[9999] pointer-events-none overflow-hidden rounded-2xl">
+      <div 
+        key={effects[effects.length - 1]?.id || 'empty'} // Re-triggers shake animation on new jutsu
+        style={{ 
+          position:'absolute', inset:0, zIndex:9999, pointerEvents:'none', overflow:'hidden',
+          animation: 'screenShake 0.4s cubic-bezier(.36,.07,.19,.97) both'
+        }}
+      >
         {effects.map(fx => (
-          <div key={fx.id} style={{ position: 'absolute', top: `${fx.y}%`, left: `${fx.x}%` }}>
-            <div className="fx-smoke-layer" />
-            <div className="fx-smoke-layer" style={{ animationDelay: '0.1s', transform: 'scale(1.2) rotate(45deg)' }} />
-            <div className="fx-flash-layer" />
-            
-            {/* Render True Shadow Clones (Video Snapshots) */}
-            {fx.cloneImgSrc && (
-              <>
-                <img 
-                  src={fx.cloneImgSrc} 
-                  className="fx-clone-snapshot-left" 
-                  alt="Clone Left" 
-                  style={{ zIndex: 9999 }} // Force it to the front
-                />
-                <img 
-                  src={fx.cloneImgSrc} 
-                  className="fx-clone-snapshot-right" 
-                  alt="Clone Right" 
-                  style={{ zIndex: 9999 }} // Force it to the front
-                />
-              </>
-            )}
+          <React.Fragment key={fx.id}>
 
-            <div className="fx-text">{fx.label}</div>
-          </div>
+            {/* Clones: narrow person-shaped columns cascading left */}
+            {fx.cloneImgSrc && CLONE_CONFIG.map((cl, i) => (
+              <CloneImage
+                key={i}
+                src={fx.cloneImgSrc}
+                leftPct={cl.leftPct}
+                delay={cl.delay}
+                opacity={cl.opacity}
+                zIdx={cl.zIdx}
+                handX={fx.handX}
+              />
+            ))}
+
+            {/* Smoke: at bottom of each clone column */}
+            {CLONE_CONFIG.map((cl, i) => (
+              <SmokeSprite
+                key={i}
+                leftPct={cl.leftPct}
+                delay={cl.delay}
+                scale={0.7 + i * 0.1}
+              />
+            ))}
+
+            {/* Text popup at hand position */}
+            <div style={{ position:'absolute', top:`${fx.handY}%`, left:`${fx.handX}%`, zIndex:70 }}>
+              <div className="fx-text">SHADOW CLONE</div>
+            </div>
+
+          </React.Fragment>
         ))}
       </div>
     </>

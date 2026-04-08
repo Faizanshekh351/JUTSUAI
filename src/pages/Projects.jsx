@@ -31,12 +31,12 @@ const Projects = () => {
     if (data.prediction) {
       setPrediction(prev => {
         if (prev?.sign === data.prediction.sign && prev?.confidence === data.prediction.confidence) {
-          return prev;
+          return prev; // No change, no re-render
         }
         return data.prediction;
       });
     } else if (!data.locked) {
-      setPrediction(prev => prev === null ? null : null);
+      setPrediction(prev => prev !== null ? null : prev);
     }
   }, [])
 

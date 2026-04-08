@@ -47,23 +47,39 @@ const fxStyles = `
     animation: floatUp 1.2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
     pointer-events: none;
   }
-  @keyframes clonePop {
-    0%   { transform: translate(-50%, -20%) scale(0.5); opacity: 0; filter: brightness(2); }
-    15%  { transform: translate(-50%, -50%) scale(1.1); opacity: 0.9; filter: brightness(1.2); }
-    80%  { transform: translate(-50%, -50%) scale(1); opacity: 0.9; filter: brightness(1); }
-    100% { transform: translate(-50%, -60%) scale(1.05); opacity: 0; filter: brightness(0.5); }
+  @keyframes cloneSlideLeft {
+    0%   { transform: translate(-30%, -50%) scale(0.9); opacity: 0; filter: brightness(2) drop-shadow(0 0 20px cyan); }
+    15%  { transform: translate(-80%, -50%) scale(1); opacity: 0.9; filter: brightness(1.2) drop-shadow(0 0 30px cyan); }
+    80%  { transform: translate(-80%, -50%) scale(1); opacity: 0.9; filter: brightness(1); }
+    100% { transform: translate(-85%, -55%) scale(1.05); opacity: 0; filter: blur(4px) brightness(0.5); }
   }
-  .fx-clone-sprite {
+  @keyframes cloneSlideRight {
+    0%   { transform: translate(-70%, -50%) scale(0.9); opacity: 0; filter: brightness(2) drop-shadow(0 0 20px cyan); }
+    15%  { transform: translate(-20%, -50%) scale(1); opacity: 0.9; filter: brightness(1.2) drop-shadow(0 0 30px cyan); }
+    80%  { transform: translate(-20%, -50%) scale(1); opacity: 0.9; filter: brightness(1); }
+    100% { transform: translate(-15%, -55%) scale(1.05); opacity: 0; filter: blur(4px) brightness(0.5); }
+  }
+  .fx-clone-snapshot-left {
     position: absolute;
-    width: 350px;
-    height: 350px;
-    background-image: url('/clone.png');
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    animation: clonePop 1.5s ease-out forwards;
+    width: 320px;
+    height: 320px;
+    object-fit: cover;
+    border-radius: 20px;
+    animation: cloneSlideLeft 1.5s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
     pointer-events: none;
     z-index: 10;
+    opacity: 0.8;
+  }
+  .fx-clone-snapshot-right {
+    position: absolute;
+    width: 320px;
+    height: 320px;
+    object-fit: cover;
+    border-radius: 20px;
+    animation: cloneSlideRight 1.5s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0.8;
   }
 `
 
@@ -86,19 +102,36 @@ const getBoundingCenter = (landmarks) => {
  * Listens to the prediction stream. When confidence is >= 98%,
  * it spawns a visual effect exactly over the hands.
  */
-const VfxEngine = ({ prediction, latestHands }) => {
+const VfxEngine = ({ prediction, latestHands, videoRef }) => {
   const [effects, setEffects] = useState([])
   const lastSpawnRef = useRef(0)
 
   const spawnEffect = useCallback((x, y, label) => {
+    let cloneImgSrc = null;
+
+    // --- NEW: Take a physical snapshot of the user's webcam! ---
+    if (videoRef?.current && label === 'SHADOW CLONE') {
+      try {
+        const snapCanvas = document.createElement('canvas')
+        snapCanvas.width = videoRef.current.videoWidth || 640
+        snapCanvas.height = videoRef.current.videoHeight || 480
+        const snapCtx = snapCanvas.getContext('2d')
+        // Ensure aspect ratio fits nicely inside our snapshot square
+        snapCtx.drawImage(videoRef.current, 0, 0, snapCanvas.width, snapCanvas.height)
+        cloneImgSrc = snapCanvas.toDataURL('image/webp', 0.8)
+      } catch (e) {
+        console.error("Failed to capture shadow clone snapshot", e)
+      }
+    }
+
     const id = Date.now() + Math.random()
-    setEffects(prev => [...prev, { id, x, y, label }])
+    setEffects(prev => [...prev, { id, x, y, label, cloneImgSrc }])
     
-    // Auto-cleanup the effect after it finishes (1.2 seconds)
+    // Auto-cleanup the effect after it finishes (1.5 seconds)
     setTimeout(() => {
       setEffects(prev => prev.filter(fx => fx.id !== id))
-    }, 1200)
-  }, [])
+    }, 1500)
+  }, [videoRef])
 
   useEffect(() => {
     // We only want to trigger the clone effect if it's highly confident
@@ -107,7 +140,7 @@ const VfxEngine = ({ prediction, latestHands }) => {
        console.log(`[VfxEngine] Shadow Clone detected at ${Math.round(prediction.confidence * 100)}% confidence`);
     }
 
-    if (prediction && prediction.sign === 'Shadow Clone' && prediction.confidence >= 0.80 && latestHands && latestHands.length > 0) {
+    if (prediction && prediction.sign === 'Shadow Clone' && prediction.confidence >= 0.70 && latestHands && latestHands.length > 0) {
       
       const now = Date.now()
       // Cooldown of 1.5 seconds between "Poofs" to prevent spamming
@@ -135,7 +168,15 @@ const VfxEngine = ({ prediction, latestHands }) => {
             <div className="fx-smoke-layer" />
             <div className="fx-smoke-layer" style={{ animationDelay: '0.1s', transform: 'scale(1.2) rotate(45deg)' }} />
             <div className="fx-flash-layer" />
-            <div className="fx-clone-sprite" />
+            
+            {/* Render True Shadow Clones (Video Snapshots) */}
+            {fx.cloneImgSrc && (
+              <>
+                <img src={fx.cloneImgSrc} className="fx-clone-snapshot-left" alt="Clone Left" />
+                <img src={fx.cloneImgSrc} className="fx-clone-snapshot-right" alt="Clone Right" />
+              </>
+            )}
+
             <div className="fx-text">{fx.label}</div>
           </div>
         ))}

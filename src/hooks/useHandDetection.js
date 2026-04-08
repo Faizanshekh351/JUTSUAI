@@ -241,7 +241,7 @@ export const useHandDetection = ({ videoRef, canvasRef, onResults, getPrediction
       prevLandmarks.current = [null, null]
       onResults?.({ hands: [], dominant: null, locked: false, ghost: false })
     }
-  }, [canvasRef, videoRef, onResults])
+  }, [canvasRef, videoRef, onResults, getPrediction])
 
   // (StartCapture callback removed in favor of direct window variable access)
 

@@ -157,7 +157,7 @@ export const useLoadedModel = () => {
       const sign       = confidence >= CONFIDENCE_GATE ? BINARY_LABEL : '?'
       return { sign, confidence, raw: confidence }
     } else {
-      // Multi-class softmax model (Your future setup using the Colab script)
+      // Multi-class softmax model
       let maxIdx = 0
       let maxConfidence = scores[0]
       for (let i = 1; i < scores.length; i++) {
@@ -165,6 +165,11 @@ export const useLoadedModel = () => {
           maxConfidence = scores[i]
           maxIdx = i
         }
+      }
+      
+      // Explicit X-Ray Debug Mode requested from the tutorial
+      if (maxConfidence > 0.05) { // Only log if it's doing something
+         console.log(`>> [X-RAY]: AI Sees Class [${maxIdx}] with Confidence: ${(maxConfidence * 100).toFixed(1)}% | Hands Visible: ${multiHandLandmarks.length}`)
       }
       
       const winningLabel = SIGN_LABELS[maxIdx]

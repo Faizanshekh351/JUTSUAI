@@ -30,7 +30,7 @@ const Projects = () => {
     else if (!data.locked) setPrediction(null)
   }, [])
 
-  const { startCapture } = useHandDetection({
+  const { handsRef } = useHandDetection({
     videoRef,
     canvasRef,
     onResults:     handleResults,
@@ -63,7 +63,7 @@ const Projects = () => {
         latestHands={latestHands}
       />
       <ConsoleLogs detectionData={detectionData} handsActive={streamActive} prediction={prediction} modelStatus={modelStatus} />
-      <DataCollector latestHands={latestHands} videoRef={videoRef} startCapture={startCapture} />
+      <DataCollector latestHands={latestHands} videoRef={videoRef} />
     </div>
   )
 }
